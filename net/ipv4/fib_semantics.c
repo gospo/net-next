@@ -469,7 +469,11 @@ static int fib_get_nhs(struct fib_info *fi, struct rtnexthop *rtnh,
 			struct nlattr *nla, *attrs = rtnh_attrs(rtnh);
 
 			nla = nla_find(attrs, attrlen, RTA_GATEWAY);
-			nexthop_nh->nh_gw = nla ? nla_get_be32(nla) : 0;
+			if (nla_len(nla) == 4) {
+				nexthop_nh->nh_gw = nla ? nla_get_be32(nla) : 0;
+			} else if (nla_len(nla) == 16) {
+				nla_memcpy(&nexthop_nh->nh_gw6, nla, nla_len(nla));
+			} else return -EINVAL;
 #ifdef CONFIG_IP_ROUTE_CLASSID
 			nla = nla_find(attrs, attrlen, RTA_FLOW);
 			nexthop_nh->nh_tclassid = nla ? nla_get_u32(nla) : 0;
@@ -496,9 +500,10 @@ int fib_nh_match(struct fib_config *cfg, struct fib_info *fi)
 	if (cfg->fc_priority && cfg->fc_priority != fi->fib_priority)
 		return 1;
 
-	if (cfg->fc_oif || cfg->fc_gw) {
+	if (cfg->fc_oif || cfg->fc_gw || !ipv6_addr_any(&cfg->fc_gw6)) {
 		if ((!cfg->fc_oif || cfg->fc_oif == fi->fib_nh->nh_oif) &&
-		    (!cfg->fc_gw  || cfg->fc_gw == fi->fib_nh->nh_gw))
+		    (!cfg->fc_gw  || cfg->fc_gw == fi->fib_nh->nh_gw) &&
+		    (ipv6_addr_any(&cfg->fc_gw6) || !ipv6_addr_cmp(&cfg->fc_gw6, &fi->fib_nh->nh_gw6)))
 			return 0;
 		return 1;
 	}
@@ -760,7 +765,7 @@ __be32 fib_info_update_nh_saddr(struct net *net, struct fib_nh *nh)
 
 struct fib_info *fib_create_info(struct fib_config *cfg)
 {
-	int err;
+	int err = 0;
 	struct fib_info *fi = NULL;
 	struct fib_info *ofi;
 	int nhs = 1;
@@ -870,6 +875,8 @@ struct fib_info *fib_create_info(struct fib_config *cfg)
 			goto err_inval;
 		if (cfg->fc_gw && fi->fib_nh->nh_gw != cfg->fc_gw)
 			goto err_inval;
+		if (!ipv6_addr_any(&cfg->fc_gw6) && ipv6_addr_cmp(&cfg->fc_gw6, &fi->fib_nh->nh_gw6))
+			goto err_inval;
 #ifdef CONFIG_IP_ROUTE_CLASSID
 		if (cfg->fc_flow && fi->fib_nh->nh_tclassid != cfg->fc_flow)
 			goto err_inval;
@@ -883,6 +890,7 @@ struct fib_info *fib_create_info(struct fib_config *cfg)
 		nh->nh_oif = cfg->fc_oif;
 		nh->nh_gw = cfg->fc_gw;
 		nh->nh_flags = cfg->fc_flags;
+		memcpy(&nh->nh_gw6,&cfg->fc_gw6,sizeof(struct in6_addr));
 #ifdef CONFIG_IP_ROUTE_CLASSID
 		nh->nh_tclassid = cfg->fc_flow;
 		if (nh->nh_tclassid)
@@ -894,7 +902,7 @@ struct fib_info *fib_create_info(struct fib_config *cfg)
 	}
 
 	if (fib_props[cfg->fc_type].error) {
-		if (cfg->fc_gw || cfg->fc_oif || cfg->fc_mp)
+		if (cfg->fc_gw || cfg->fc_oif || cfg->fc_mp || !ipv6_addr_any(&cfg->fc_gw6))
 			goto err_inval;
 		goto link_it;
 	} else {
@@ -1034,6 +1042,9 @@ int fib_dump_info(struct sk_buff *skb, u32 portid, u32 seq, int event,
 		if (fi->fib_nh->nh_oif &&
 		    nla_put_u32(skb, RTA_OIF, fi->fib_nh->nh_oif))
 			goto nla_put_failure;
+		if (!ipv6_addr_any(&fi->fib_nh->nh_gw6) &&
+		    nla_put(skb, RTA_GATEWAY, 16, &fi->fib_nh->nh_gw6))
+			goto nla_put_failure;
 #ifdef CONFIG_IP_ROUTE_CLASSID
 		if (fi->fib_nh[0].nh_tclassid &&
 		    nla_put_u32(skb, RTA_FLOW, fi->fib_nh[0].nh_tclassid))
@@ -1060,6 +1071,9 @@ int fib_dump_info(struct sk_buff *skb, u32 portid, u32 seq, int event,
 
 			if (nh->nh_gw &&
 			    nla_put_be32(skb, RTA_GATEWAY, nh->nh_gw))
+				goto nla_put_failure;
+			if (!ipv6_addr_any(&nh->nh_gw6) &&
+			    nla_put(skb, RTA_GATEWAY, 16, &nh->nh_gw6))
 				goto nla_put_failure;
 #ifdef CONFIG_IP_ROUTE_CLASSID
 			if (nh->nh_tclassid &&

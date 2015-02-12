@@ -526,7 +526,7 @@ const struct nla_policy rtm_ipv4_policy[RTA_MAX + 1] = {
 	[RTA_SRC]		= { .type = NLA_U32 },
 	[RTA_IIF]		= { .type = NLA_U32 },
 	[RTA_OIF]		= { .type = NLA_U32 },
-	[RTA_GATEWAY]		= { .type = NLA_U32 },
+	[RTA_GATEWAY]		= { .len = sizeof(u32) },
 	[RTA_PRIORITY]		= { .type = NLA_U32 },
 	[RTA_PREFSRC]		= { .type = NLA_U32 },
 	[RTA_METRICS]		= { .type = NLA_NESTED },
@@ -575,7 +575,11 @@ static int rtm_to_fib_config(struct net *net, struct sk_buff *skb,
 			cfg->fc_oif = nla_get_u32(attr);
 			break;
 		case RTA_GATEWAY:
-			cfg->fc_gw = nla_get_be32(attr);
+			if (nla_len(attr) == 4)
+				cfg->fc_gw = nla_get_be32(attr);
+			else if (nla_len(attr) == 16)
+				nla_memcpy(&cfg->fc_gw6, attr, nla_len(attr));
+			else goto errout;
 			break;
 		case RTA_PRIORITY:
 			cfg->fc_priority = nla_get_u32(attr);

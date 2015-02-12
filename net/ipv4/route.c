@@ -1401,6 +1401,10 @@ static void rt_set_nexthop(struct rtable *rt, __be32 daddr,
 			rt->rt_gateway = nh->nh_gw;
 			rt->rt_uses_gateway = 1;
 		}
+		if (!ipv6_addr_any(&nh->nh_gw6)) {
+			memcpy(&rt->rt_gateway6, &nh->nh_gw6, sizeof(struct in6_addr));
+			rt->rt_uses_gateway = 1;
+		}
 		dst_init_metrics(&rt->dst, fi->fib_metrics, true);
 #ifdef CONFIG_IP_ROUTE_CLASSID
 		rt->dst.tclassid = nh->nh_tclassid;
@@ -1418,6 +1422,10 @@ static void rt_set_nexthop(struct rtable *rt, __be32 daddr,
 			rt->dst.flags |= DST_NOCACHE;
 			if (!rt->rt_gateway)
 				rt->rt_gateway = daddr;
+			if (ipv6_addr_any(&rt->rt_gateway6)) {
+				memcpy(&rt->rt_gateway6, &nh->nh_gw6, sizeof(struct in6_addr));
+				rt->rt_uses_gateway = 1;
+			}
 			rt_add_uncached_list(rt);
 		}
 	} else
@@ -1489,6 +1497,7 @@ static int ip_route_input_mc(struct sk_buff *skb, __be32 daddr, __be32 saddr,
 	rth->rt_pmtu	= 0;
 	rth->rt_gateway	= 0;
 	rth->rt_uses_gateway = 0;
+	memset(&rth->rt_gateway6, 0, sizeof(struct in6_addr));
 	INIT_LIST_HEAD(&rth->rt_uncached);
 	if (our) {
 		rth->dst.input= ip_local_deliver;
@@ -1619,6 +1628,7 @@ static int __mkroute_input(struct sk_buff *skb,
 	rth->rt_pmtu	= 0;
 	rth->rt_gateway	= 0;
 	rth->rt_uses_gateway = 0;
+	memset(&rth->rt_gateway6, 0, sizeof(struct in6_addr));
 	INIT_LIST_HEAD(&rth->rt_uncached);
 	RT_CACHE_STAT_INC(in_slow_tot);
 
@@ -1793,6 +1803,7 @@ local_input:
 	rth->rt_pmtu	= 0;
 	rth->rt_gateway	= 0;
 	rth->rt_uses_gateway = 0;
+	memset(&rth->rt_gateway6, 0, sizeof(struct in6_addr));
 	INIT_LIST_HEAD(&rth->rt_uncached);
 	RT_CACHE_STAT_INC(in_slow_tot);
 	if (res.type == RTN_UNREACHABLE) {
@@ -1982,6 +1993,7 @@ add:
 	rth->rt_pmtu	= 0;
 	rth->rt_gateway = 0;
 	rth->rt_uses_gateway = 0;
+	memset(&rth->rt_gateway6, 0, sizeof(struct in6_addr));
 	INIT_LIST_HEAD(&rth->rt_uncached);
 
 	RT_CACHE_STAT_INC(out_slow_tot);

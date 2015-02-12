@@ -79,6 +79,9 @@
 #include <linux/mroute.h>
 #include <linux/netlink.h>
 #include <linux/tcp.h>
+#include <net/ndisc.h>
+#include <linux/in6.h>
+#include <net/ipv6.h>
 
 int sysctl_ip_default_ttl __read_mostly = IPDEFTTL;
 EXPORT_SYMBOL(sysctl_ip_default_ttl);
@@ -169,7 +172,7 @@ static inline int ip_finish_output2(struct sk_buff *skb)
 	struct rtable *rt = (struct rtable *)dst;
 	struct net_device *dev = dst->dev;
 	unsigned int hh_len = LL_RESERVED_SPACE(dev);
-	struct neighbour *neigh;
+	struct neighbour *neigh = NULL;
 	u32 nexthop;
 
 	if (rt->rt_type == RTN_MULTICAST) {
@@ -193,10 +196,27 @@ static inline int ip_finish_output2(struct sk_buff *skb)
 	}
 
 	rcu_read_lock_bh();
-	nexthop = (__force u32) rt_nexthop(rt, ip_hdr(skb)->daddr);
-	neigh = __ipv4_neigh_lookup_noref(dev, nexthop);
-	if (unlikely(!neigh))
-		neigh = __neigh_create(&arp_tbl, &nexthop, dev, false);
+
+#if IS_ENABLED(CONFIG_IPV6)
+	/* If there is an ipv6 gateway specified, use it */
+	if (!rt->rt_gateway && !ipv6_addr_any(&rt->rt_gateway6)) {
+		neigh = __ipv6_neigh_lookup_noref(dst->dev, &rt->rt_gateway6);
+
+		if (unlikely(!neigh)) {
+			neigh = __neigh_create(&nd_tbl, &rt->rt_gateway6, dst->dev, false);
+		}
+	}
+#endif
+	/* No ipv6 gateway created, so use ipv4 */
+	if (likely(!neigh)) {
+		nexthop = (__force u32) rt_nexthop(rt, ip_hdr(skb)->daddr);
+		neigh = __ipv4_neigh_lookup_noref(dev, nexthop);
+
+		if (unlikely(!neigh)) {
+			neigh = __neigh_create(&arp_tbl, &nexthop, dev, false);
+		}
+	}
+
 	if (!IS_ERR(neigh)) {
 		int res = dst_neigh_output(dst, neigh, skb);
 
