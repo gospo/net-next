@@ -22,6 +22,7 @@
 #include <net/fib_rules.h>
 #include <net/inetpeer.h>
 #include <linux/percpu.h>
+#include <linux/in6.h>
 
 struct fib_config {
 	u8			fc_dst_len;
@@ -44,6 +45,7 @@ struct fib_config {
 	u32			fc_flow;
 	u32			fc_nlflags;
 	struct nl_info		fc_nlinfo;
+	struct in6_addr		fc_gw6;
  };
 
 struct fib_info;
@@ -89,6 +91,7 @@ struct fib_nh {
 	struct rtable __rcu * __percpu *nh_pcpu_rth_output;
 	struct rtable __rcu	*nh_rth_input;
 	struct fnhe_hash_bucket	__rcu *nh_exceptions;
+	struct in6_addr		nh_gw6;
 };
 
 /*

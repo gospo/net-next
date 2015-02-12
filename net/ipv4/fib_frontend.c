@@ -591,6 +591,7 @@ const struct nla_policy rtm_ipv4_policy[RTA_MAX + 1] = {
 	[RTA_METRICS]		= { .type = NLA_NESTED },
 	[RTA_MULTIPATH]		= { .len = sizeof(struct rtnexthop) },
 	[RTA_FLOW]		= { .type = NLA_U32 },
+	[RTA_GATEWAY6]		= { .len = sizeof(struct in6_addr) },
 };
 
 static int rtm_to_fib_config(struct net *net, struct sk_buff *skb,
@@ -635,6 +636,9 @@ static int rtm_to_fib_config(struct net *net, struct sk_buff *skb,
 			break;
 		case RTA_GATEWAY:
 			cfg->fc_gw = nla_get_be32(attr);
+			break;
+		case RTA_GATEWAY6:
+			nla_memcpy(&cfg->fc_gw6, attr, sizeof(struct in6_addr));
 			break;
 		case RTA_PRIORITY:
 			cfg->fc_priority = nla_get_u32(attr);
