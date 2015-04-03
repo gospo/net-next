@@ -591,8 +591,10 @@ const struct nla_policy rtm_ipv4_policy[RTA_MAX + 1] = {
 	[RTA_METRICS]		= { .type = NLA_NESTED },
 	[RTA_MULTIPATH]		= { .len = sizeof(struct rtnexthop) },
 	[RTA_FLOW]		= { .type = NLA_U32 },
-	[RTA_GATEWAY6]		= { .len = sizeof(struct in6_addr) },
+	[RTA_VIA]		= { .len = sizeof(struct in6_addr) },
 };
+
+#define MAX_VIA_ALEN (ALIGN(MAX_ADDR_LEN, sizeof(unsigned long )))
 
 static int rtm_to_fib_config(struct net *net, struct sk_buff *skb,
 			     struct nlmsghdr *nlh, struct fib_config *cfg)
@@ -637,8 +639,32 @@ static int rtm_to_fib_config(struct net *net, struct sk_buff *skb,
 		case RTA_GATEWAY:
 			cfg->fc_gw = nla_get_be32(attr);
 			break;
-		case RTA_GATEWAY6:
-			nla_memcpy(&cfg->fc_gw6, attr, sizeof(struct in6_addr));
+		case RTA_VIA:
+			{
+			struct rtvia *via = nla_data(attr);
+			int via_alen = nla_len(attr) - offsetof(struct rtvia, rtvia_addr);
+			int family = via->rtvia_family;
+
+			if (via_alen > MAX_VIA_ALEN)
+				goto errout;
+
+			/* Validate the address family */
+			switch(family) {
+			case AF_INET:
+				if (via_alen != 4)
+					goto errout;
+				memcpy(&cfg->fc_gw, via->rtvia_addr, via_alen);
+				break;
+			case AF_INET6:
+				if (via_alen != 16)
+					goto errout;
+				memcpy(&cfg->fc_gw6, via->rtvia_addr, via_alen);
+				break;
+			default:
+				/* Unsupported address family */
+				goto errout;
+			}
+			}
 			break;
 		case RTA_PRIORITY:
 			cfg->fc_priority = nla_get_u32(attr);

@@ -205,6 +205,9 @@ static inline int ip_finish_output2(struct sock *sk, struct sk_buff *skb)
 #if IS_ENABLED(CONFIG_IPV6)
 	/* If there is an ipv6 gateway specified, use it */
 	if (!rt->rt_gateway && !ipv6_addr_any(&rt->rt_gateway6)) {
+		if (rt->rt_gateway)
+			 printk(KERN_CRIT "%s +%d rt_gateway is non-zero but nh is %pI\n",__FILE__,__LINE__,&rt->rt_gateway6);
+
 		neigh = __ipv6_neigh_lookup_noref(dst->dev, &rt->rt_gateway6);
 
 		if (unlikely(!neigh)) {

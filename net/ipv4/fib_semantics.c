@@ -987,6 +987,22 @@ failure:
 	return ERR_PTR(err);
 }
 
+static int nla_put_via(struct sk_buff *skb,
+                      u16 family, const void *addr, int alen)
+{
+       struct nlattr *nla;
+       struct rtvia *via;
+
+       nla = nla_reserve(skb, RTA_VIA, alen + 2);
+       if (!nla)
+               return -EMSGSIZE;
+
+       via = nla_data(nla);
+       via->rtvia_family = family;
+       memcpy(via->rtvia_addr, addr, alen);
+       return 0;
+}
+
 int fib_dump_info(struct sk_buff *skb, u32 portid, u32 seq, int event,
 		  u32 tb_id, u8 type, __be32 dst, int dst_len, u8 tos,
 		  struct fib_info *fi, unsigned int flags)
@@ -1034,7 +1050,7 @@ int fib_dump_info(struct sk_buff *skb, u32 portid, u32 seq, int event,
 		    nla_put_u32(skb, RTA_OIF, fi->fib_nh->nh_oif))
 			goto nla_put_failure;
 		if (!ipv6_addr_any(&fi->fib_nh->nh_gw6) &&
-		    nla_put(skb, RTA_GATEWAY, 16, &fi->fib_nh->nh_gw6))
+		    nla_put_via(skb, AF_INET6, &fi->fib_nh->nh_gw6, sizeof(struct in6_addr)))
 			goto nla_put_failure;
 #ifdef CONFIG_IP_ROUTE_CLASSID
 		if (fi->fib_nh[0].nh_tclassid &&
