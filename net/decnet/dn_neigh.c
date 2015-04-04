@@ -78,7 +78,6 @@ struct neigh_table dn_neigh_table = {
 	.family =			PF_DECnet,
 	.entry_size =			NEIGH_ENTRY_SIZE(sizeof(struct dn_neigh)),
 	.key_len =			sizeof(__le16),
-	.protocol =			cpu_to_be16(ETH_P_DNA_RT),
 	.hash =				dn_neigh_hash,
 	.key_eq =			dn_key_eq,
 	.constructor =			dn_neigh_construct,

@@ -153,7 +153,6 @@ static const struct neigh_ops arp_direct_ops = {
 struct neigh_table arp_tbl = {
 	.family		= AF_INET,
 	.key_len	= 4,
-	.protocol	= cpu_to_be16(ETH_P_IP),
 	.hash		= arp_hash,
 	.key_eq		= arp_key_eq,
 	.constructor	= arp_constructor,
