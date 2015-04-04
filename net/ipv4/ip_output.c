@@ -179,6 +179,7 @@ static inline int ip_finish_output2(struct sock *sk, struct sk_buff *skb)
 	unsigned int hh_len = LL_RESERVED_SPACE(dev);
 	struct neighbour *neigh = NULL;
 	u32 nexthop;
+	bool checked_ipv6 = false;
 
 	if (rt->rt_type == RTN_MULTICAST) {
 		IP_UPD_PO_STATS(dev_net(dev), IPSTATS_MIB_OUTMCAST, skb->len);
@@ -204,15 +205,17 @@ static inline int ip_finish_output2(struct sock *sk, struct sk_buff *skb)
 
 #if IS_ENABLED(CONFIG_IPV6)
 	/* If there is an ipv6 gateway specified, use it */
-	if (!rt->rt_gateway && !ipv6_addr_any(&rt->rt_gateway6)) {
+	if (!ipv6_addr_any(&rt->rt_gateway6)) {
 		if (rt->rt_gateway)
-			 printk(KERN_CRIT "%s +%d rt_gateway is non-zero but nh is %pI\n",__FILE__,__LINE__,&rt->rt_gateway6);
+			 printk(KERN_CRIT "%s +%d rt_gateway is non-zero but nh is %pI6\n",__FILE__,__LINE__,&rt->rt_gateway6);
 
 		neigh = __ipv6_neigh_lookup_noref(dst->dev, &rt->rt_gateway6);
 
 		if (unlikely(!neigh)) {
+			printk(KERN_CRIT "Creating ipv6 neigh for nexthop %pI6\n",&rt->rt_gateway6);
 			neigh = __neigh_create(&nd_tbl, &rt->rt_gateway6, dst->dev, false);
 		}
+		checked_ipv6 = true;
 	}
 #endif
 	/* No ipv6 gateway created, so use ipv4 */
@@ -221,8 +224,11 @@ static inline int ip_finish_output2(struct sock *sk, struct sk_buff *skb)
 		neigh = __ipv4_neigh_lookup_noref(dev, nexthop);
 
 		if (unlikely(!neigh)) {
+			printk(KERN_CRIT "Creating ipv4 neigh for nexthop %pI4\n",&nexthop);
 			neigh = __neigh_create(&arp_tbl, &nexthop, dev, false);
 		}
+		if (checked_ipv6)
+			printk(KERN_CRIT "already checked nexthop %pI6, why are we checking nexthop %pI4 ?!?!?\n",&rt->rt_gateway6,&nexthop);
 	}
 
 	if (!IS_ERR(neigh)) {

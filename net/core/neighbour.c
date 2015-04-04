@@ -1255,6 +1255,7 @@ static void neigh_hh_init(struct neighbour *n, struct dst_entry *dst)
 	__be16 prot = dst->ops->protocol;
 	struct hh_cache	*hh = &n->hh;
 
+	printk(KERN_CRIT "Setting proto to %x\n",prot);
 	write_lock_bh(&n->lock);
 
 	/* Only one thread can come in here and initialize the
