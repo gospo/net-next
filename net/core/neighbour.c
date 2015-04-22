@@ -445,7 +445,7 @@ struct neighbour *neigh_lookup_nodev(struct neigh_table *tbl, struct net *net,
 EXPORT_SYMBOL(neigh_lookup_nodev);
 
 struct neighbour *__neigh_create(struct neigh_table *tbl, const void *pkey,
-				 struct net_device *dev, bool want_ref)
+				 struct net_device *dev, bool want_ref, __be16 protocol)
 {
 	u32 hash_val;
 	int key_len = tbl->key_len;
@@ -2412,7 +2412,7 @@ int neigh_xmit(int index, struct net_device *dev,
 			goto out;
 		neigh = __neigh_lookup_noref(tbl, addr, dev);
 		if (!neigh)
-			neigh = __neigh_create(tbl, addr, dev, false);
+			neigh = __neigh_create(tbl, addr, dev, false, 0);
 		err = PTR_ERR(neigh);
 		if (IS_ERR(neigh))
 			goto out_kfree_skb;

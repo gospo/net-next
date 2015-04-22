@@ -154,6 +154,7 @@ struct neighbour {
 	struct rcu_head		rcu;
 	struct net_device	*dev;
 	u8			primary_key[0];
+	__be16                  protocol;
 };
 
 struct neigh_ops {

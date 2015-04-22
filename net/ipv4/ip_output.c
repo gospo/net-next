@@ -213,7 +213,7 @@ static inline int ip_finish_output2(struct sock *sk, struct sk_buff *skb)
 
 		if (unlikely(!neigh)) {
 			printk(KERN_CRIT "Creating ipv6 neigh for nexthop %pI6\n",&rt->rt_gateway6);
-			neigh = __neigh_create(&nd_tbl, &rt->rt_gateway6, dst->dev, false);
+			neigh = __neigh_create(&nd_tbl, &rt->rt_gateway6, dst->dev, false, cpu_to_be16(ETH_P_IP));
 		}
 		checked_ipv6 = true;
 	}
@@ -224,7 +224,7 @@ static inline int ip_finish_output2(struct sock *sk, struct sk_buff *skb)
 		neigh = __ipv4_neigh_lookup_noref(dev, nexthop);
 
 		if (unlikely(!neigh)) {
-			printk(KERN_CRIT "Creating ipv4 neigh for nexthop %pI4\n",&nexthop);
+			printk(KERN_CRIT "Creating ipv4 neigh for nexthop %pI4\n",&nexthop, cpu_to_be16(ETH_P_IP6));
 			neigh = __neigh_create(&arp_tbl, &nexthop, dev, false);
 		}
 		if (checked_ipv6)

@@ -108,7 +108,7 @@ static int ip6_finish_output2(struct sock *sk, struct sk_buff *skb)
 	nexthop = rt6_nexthop((struct rt6_info *)dst);
 	neigh = __ipv6_neigh_lookup_noref(dst->dev, nexthop);
 	if (unlikely(!neigh))
-		neigh = __neigh_create(&nd_tbl, nexthop, dst->dev, false);
+		neigh = __neigh_create(&nd_tbl, nexthop, dst->dev, false, cpu_to_be16(ETH_P_IP6));
 	if (!IS_ERR(neigh)) {
 		ret = dst_neigh_output(dst, neigh, skb);
 		rcu_read_unlock_bh();
