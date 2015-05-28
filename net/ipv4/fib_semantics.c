@@ -1282,8 +1282,8 @@ out:
 }
 
 /*
- * Dead device goes up. We wake up dead nexthops.
- * It takes sense only on multipath routes.
+ * Dead device goes up. We wake up dead nexthops and/or
+ * clear linkdown flag on nexthops.
  */
 int fib_sync_up(struct net_device *dev, unsigned int nh_flags)
 {
