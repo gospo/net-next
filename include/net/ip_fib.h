@@ -120,6 +120,7 @@ struct fib_info {
 	struct rcu_head		rcu;
 	struct fib_nh		fib_nh[0];
 #define fib_dev		fib_nh[0].nh_dev
+	struct fib_table	*fib_tb;
 };
 
 
