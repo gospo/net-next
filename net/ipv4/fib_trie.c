@@ -1099,7 +1099,7 @@ int fib_table_insert(struct fib_table *tb, struct fib_config *cfg)
 	if ((plen < KEYLENGTH) && (key << plen))
 		return -EINVAL;
 
-	fi = fib_create_info(cfg);
+	fi = fib_create_info(tb, cfg);
 	if (IS_ERR(fi)) {
 		err = PTR_ERR(fi);
 		goto err;
@@ -1171,6 +1171,8 @@ int fib_table_insert(struct fib_table *tb, struct fib_config *cfg)
 			new_fa->fa_slen = fa->fa_slen;
 			new_fa->tb_id = tb->tb_id;
 
+			/* gospo: need to add one of these calls when changing
+			 * route flags */
 			err = switchdev_fib_ipv4_add(key, plen, fi,
 						     new_fa->fa_tos,
 						     cfg->fc_type,
@@ -1839,6 +1841,15 @@ int fib_table_flush(struct fib_table *tb)
 
 		hlist_for_each_entry_safe(fa, tmp, &n->leaf, fa_list) {
 			struct fib_info *fi = fa->fa_info;
+
+			/* Need check for RTNH_F_LINKDOWN and consider
+			 * whether or not to call switchdev_fib_ipv4_add
+			 * on routes with nexthops that have
+			 * RTNH_F_LINKDOWN or RTNH_F_DEAD.
+			 * Alternatively there could be a new function
+			 * that scans for things that may have just gone
+			 * up.  Maybe fib_flush() should really be
+			 * called fib_update()? */
 
 			if (!fi || !(fi->fib_flags & RTNH_F_DEAD)) {
 				slen = fa->fa_slen;

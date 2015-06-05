@@ -760,7 +760,7 @@ __be32 fib_info_update_nh_saddr(struct net *net, struct fib_nh *nh)
 	return nh->nh_saddr;
 }
 
-struct fib_info *fib_create_info(struct fib_config *cfg)
+struct fib_info *fib_create_info(struct fib_table *tb, struct fib_config *cfg)
 {
 	int err;
 	struct fib_info *fi = NULL;
@@ -823,6 +823,7 @@ struct fib_info *fib_create_info(struct fib_config *cfg)
 	fi->fib_priority = cfg->fc_priority;
 	fi->fib_prefsrc = cfg->fc_prefsrc;
 	fi->fib_type = cfg->fc_type;
+	fi->fib_tb = tb;
 
 	fi->fib_nhs = nhs;
 	change_nexthops(fi) {
@@ -1020,6 +1021,7 @@ int fib_dump_info(struct sk_buff *skb, u32 portid, u32 seq, int event,
 	if (nla_put_u32(skb, RTA_TABLE, tb_id))
 		goto nla_put_failure;
 	rtm->rtm_type = type;
+	/* gospo: add a check here to add RTNH_F_DEAD if sysctl is set */
 	rtm->rtm_flags = fi->fib_flags;
 	rtm->rtm_scope = fi->fib_scope;
 	rtm->rtm_protocol = fi->fib_protocol;
@@ -1125,6 +1127,9 @@ int fib_sync_down_addr(struct net *net, __be32 local)
 			continue;
 		if (fi->fib_prefsrc == local) {
 			fi->fib_flags |= RTNH_F_DEAD;
+			/* gospo: no need to sync with hardware right here as
+			 * we will flush this entry in fib_flush_table() in a
+			 * sec */
 			ret++;
 		}
 	}
@@ -1167,6 +1172,8 @@ int fib_sync_down_dev(struct net_device *dev, unsigned long event)
 					nexthop_nh->nh_flags |= RTNH_F_LINKDOWN;
 					break;
 				}
+				/* gospo: no need to sync with hardware right
+				 * here since we will do it below */
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
 				spin_lock_bh(&fib_multipath_lock);
 				fi->fib_power -= nexthop_nh->nh_power;
@@ -1192,8 +1199,27 @@ int fib_sync_down_dev(struct net_device *dev, unsigned long event)
 				fi->fib_flags |= RTNH_F_LINKDOWN;
 				break;
 			}
+			/* gospo: no need to sync with hardware right
+			 * here since we will do it below */
 			ret++;
 		}
+		/* need to sync with hardware here, probably based on a marker
+		 * that something changed, but maybe not */
+#if 0
+		switchdev_fib_ipv4_add(*n->key, KEYLENGTH - fa->fa_slen,
+				       fi, *fa->fa_tos,
+				       fi->fib_type,
+				       NLM_F_REPLACE,
+				       tb->tb_id);
+#else
+		/* notify other of the change to the route status, probably
+		 * best to just call fib_table_insert() or similar that will
+		 * ultimately indicate that flags have changed.  This
+		 * would mirror what is done when a route is changed
+		 * with 'ip route replace' -- i.e. NLM_F_REPLACE command */
+		/* maybe just fall fib_magic here with some hard-coded
+		 * values to see if it works */
+#endif
 	}
 
 	return ret;
@@ -1301,6 +1327,8 @@ int fib_sync_up(struct net_device *dev, unsigned int nh_flags)
 			spin_lock_bh(&fib_multipath_lock);
 			nexthop_nh->nh_power = 0;
 			nexthop_nh->nh_flags &= ~nh_flags;
+			/* gospo: need to sync with hardware here since we do
+			 * it below  */
 			spin_unlock_bh(&fib_multipath_lock);
 #else
 			nexthop_nh->nh_flags &= ~nh_flags;
@@ -1309,8 +1337,12 @@ int fib_sync_up(struct net_device *dev, unsigned int nh_flags)
 
 		if (alive > 0) {
 			fi->fib_flags &= ~nh_flags;
+			/* gospo: need to sync with hardware here since we do
+			 * it below  */
 			ret++;
 		}
+		/* need to sync with hardware probably based on some marker to
+		 * indicate that flags have changed */
 	}
 
 	return ret;
@@ -1377,3 +1409,4 @@ void fib_select_multipath(struct fib_result *res)
 	spin_unlock_bh(&fib_multipath_lock);
 }
 #endif
+
