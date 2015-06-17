@@ -339,6 +339,7 @@ struct rtnexthop {
 #define RTNH_F_ONLINK		4	/* Gateway is forced on link	*/
 #define RTNH_F_OFFLOAD		8	/* offloaded route */
 #define RTNH_F_LINKDOWN		16	/* carrier-down on nexthop */
+#define RTNH_F_CHANGED		32	/* used for internal kernel tracking */
 
 #define RTNH_F_COMPARE_MASK	(RTNH_F_DEAD | RTNH_F_LINKDOWN) /* used as mask for route comparisons */
 
