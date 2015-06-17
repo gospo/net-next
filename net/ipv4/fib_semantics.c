@@ -605,7 +605,7 @@ static int fib_check_nh(struct fib_config *cfg, struct fib_info *fi,
 			if (!(dev->flags & IFF_UP))
 				return -ENETDOWN;
 			if (!netif_carrier_ok(dev))
-				nh->nh_flags |= RTNH_F_LINKDOWN;
+				nh->nh_flags |= (RTNH_F_LINKDOWN | RTNH_F_CHANGED);
 			nh->nh_dev = dev;
 			dev_hold(dev);
 			nh->nh_scope = RT_SCOPE_LINK;
@@ -1126,9 +1126,9 @@ int fib_sync_down_addr(struct net *net, __be32 local)
 		if (!net_eq(fi->fib_net, net))
 			continue;
 		if (fi->fib_prefsrc == local) {
-			fi->fib_flags |= RTNH_F_DEAD;
+			fi->fib_flags |= (RTNH_F_DEAD | RTNH_F_CHANGED);
 			/* gospo: no need to sync with hardware right here as
-			 * we will flush this entry in fib_flush_table() in a
+			 * we will flush this entry in fib_table_flush() in a
 			 * sec */
 			ret++;
 		}
@@ -1166,10 +1166,10 @@ int fib_sync_down_dev(struct net_device *dev, unsigned long event)
 				switch (event) {
 				case NETDEV_DOWN:
 				case NETDEV_UNREGISTER:
-					nexthop_nh->nh_flags |= RTNH_F_DEAD;
+					nexthop_nh->nh_flags |= (RTNH_F_DEAD | RTNH_F_CHANGED);
 					/* fall through */
 				case NETDEV_CHANGE:
-					nexthop_nh->nh_flags |= RTNH_F_LINKDOWN;
+					nexthop_nh->nh_flags |= (RTNH_F_LINKDOWN | RTNH_F_CHANGED);
 					break;
 				}
 				/* gospo: no need to sync with hardware right
@@ -1193,10 +1193,10 @@ int fib_sync_down_dev(struct net_device *dev, unsigned long event)
 			switch (event) {
 			case NETDEV_DOWN:
 			case NETDEV_UNREGISTER:
-				fi->fib_flags |= RTNH_F_DEAD;
+				fi->fib_flags |= (RTNH_F_DEAD | RTNH_F_CHANGED);
 				/* fall through */
 			case NETDEV_CHANGE:
-				fi->fib_flags |= RTNH_F_LINKDOWN;
+				fi->fib_flags |= (RTNH_F_LINKDOWN | RTNH_F_CHANGED);
 				break;
 			}
 			/* gospo: no need to sync with hardware right
@@ -1327,6 +1327,7 @@ int fib_sync_up(struct net_device *dev, unsigned int nh_flags)
 			spin_lock_bh(&fib_multipath_lock);
 			nexthop_nh->nh_power = 0;
 			nexthop_nh->nh_flags &= ~nh_flags;
+			nexthop_nh->nh_flags |= RTNH_F_CHANGED;
 			/* gospo: need to sync with hardware here since we do
 			 * it below  */
 			spin_unlock_bh(&fib_multipath_lock);
@@ -1337,6 +1338,7 @@ int fib_sync_up(struct net_device *dev, unsigned int nh_flags)
 
 		if (alive > 0) {
 			fi->fib_flags &= ~nh_flags;
+			fi->fib_flags |= RTNH_F_CHANGED;
 			/* gospo: need to sync with hardware here since we do
 			 * it below  */
 			ret++;

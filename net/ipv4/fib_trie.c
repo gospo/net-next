@@ -202,6 +202,38 @@ static inline unsigned long get_index(t_key key, struct key_vector *kv)
 	return index >> kv->pos;
 }
 
+
+#ifdef CONFIG_IP_ROUTE_MULTIPATH
+
+#define for_nexthops(fi) {						\
+	int nhsel; const struct fib_nh *nh;				\
+	for (nhsel = 0, nh = (fi)->fib_nh;				\
+	     nhsel < (fi)->fib_nhs;					\
+	     nh++, nhsel++)
+
+#define change_nexthops(fi) {						\
+	int nhsel; struct fib_nh *nexthop_nh;				\
+	for (nhsel = 0,	nexthop_nh = (struct fib_nh *)((fi)->fib_nh);	\
+	     nhsel < (fi)->fib_nhs;					\
+	     nexthop_nh++, nhsel++)
+
+#else /* CONFIG_IP_ROUTE_MULTIPATH */
+
+/* Hope, that gcc will optimize it to get rid of dummy loop */
+
+#define for_nexthops(fi) {						\
+	int nhsel; const struct fib_nh *nh = (fi)->fib_nh;		\
+	for (nhsel = 0; nhsel < 1; nhsel++)
+
+#define change_nexthops(fi) {						\
+	int nhsel;							\
+	struct fib_nh *nexthop_nh = (struct fib_nh *)((fi)->fib_nh);	\
+	for (nhsel = 0; nhsel < 1; nhsel++)
+
+#endif /* CONFIG_IP_ROUTE_MULTIPATH */
+
+#define endfor_nexthops(fi) }
+
 /* To understand this stuff, an understanding of keys and all their bits is
  * necessary. Every node in the trie has a key associated with it, but not
  * all of the bits in that key are significant.
@@ -1841,6 +1873,7 @@ int fib_table_flush(struct fib_table *tb)
 
 		hlist_for_each_entry_safe(fa, tmp, &n->leaf, fa_list) {
 			struct fib_info *fi = fa->fa_info;
+			bool update_route = false;
 
 			/* Need check for RTNH_F_LINKDOWN and consider
 			 * whether or not to call switchdev_fib_ipv4_add
@@ -1851,18 +1884,43 @@ int fib_table_flush(struct fib_table *tb)
 			 * up.  Maybe fib_flush() should really be
 			 * called fib_update()? */
 
-			if (!fi || !(fi->fib_flags & RTNH_F_DEAD)) {
-				slen = fa->fa_slen;
-				continue;
-			}
+			if (fi && (fi->fib_flags & RTNH_F_LINKDOWN)) {
+				printk(KERN_CRIT "%s: +%d deleting entry in hardware due to link being down\n",__FILE__,__LINE__);
+				switchdev_fib_ipv4_del(n->key, KEYLENGTH - fa->fa_slen,
+						       fi, fa->fa_tos, fa->fa_type,
+						       tb->tb_id);
+			} else if (fi && (fi->fib_flags & RTNH_F_DEAD)) {
 
-			switchdev_fib_ipv4_del(n->key, KEYLENGTH - fa->fa_slen,
-					       fi, fa->fa_tos, fa->fa_type,
-					       tb->tb_id);
-			hlist_del_rcu(&fa->fa_list);
-			fib_release_info(fa->fa_info);
-			alias_free_mem_rcu(fa);
-			found++;
+				printk(KERN_CRIT "%s: +%d deleting entry in hardware due to route being dead\n",__FILE__,__LINE__);
+				switchdev_fib_ipv4_del(n->key, KEYLENGTH - fa->fa_slen,
+						       fi, fa->fa_tos, fa->fa_type,
+						       tb->tb_id);
+				hlist_del_rcu(&fa->fa_list);
+				fib_release_info(fa->fa_info);
+				alias_free_mem_rcu(fa);
+				found++;
+
+			} else {
+				/* If we are here we know the entire route nexthop is
+				 * not DEAD or LINKDOWN, but we need to check nexthops */
+				change_nexthops(fi) {
+					if (nexthop_nh->nh_flags & RTNH_F_CHANGED) {
+						nexthop_nh->nh_flags &= ~(RTNH_F_CHANGED);
+						fi->fib_flags &= ~(RTNH_F_CHANGED);
+						update_route = true;
+						break;
+					}
+				} endfor_nexthops(fi);
+
+				if (update_route) {
+					printk(KERN_CRIT "%s +%d adding entry in hardware due to nexthop being dead/linkdown\n",__FILE__,__LINE__);
+					switchdev_fib_ipv4_add(n->key, KEYLENGTH - fa->fa_slen,
+							       fi, fa->fa_tos, fa->fa_type,
+							       NLM_F_REPLACE, tb->tb_id);
+					update_route = false;
+				}
+			}
+			slen = fa->fa_slen;
 		}
 
 		/* update leaf slen */
