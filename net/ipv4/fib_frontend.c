@@ -1137,8 +1137,7 @@ static int fib_netdev_event(struct notifier_block *this, unsigned long event, vo
 		flags = dev_get_flags(dev);
 		if (flags & (IFF_RUNNING|IFF_LOWER_UP)) {
 			if (fib_sync_up(dev, RTNH_F_LINKDOWN))
-				printk(KERN_CRIT "Scan FIB for entries
-					that should be updated due to flag clearage\n");
+				fib_flush(dev_net(dev));
 		} else {
 			if (fib_sync_down_dev(dev, event))
 				fib_flush(dev_net(dev));

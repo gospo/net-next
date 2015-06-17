@@ -1125,7 +1125,7 @@ int fib_sync_down_addr(struct net *net, __be32 local)
 		if (fi->fib_prefsrc == local) {
 			fi->fib_flags |= RTNH_F_DEAD;
 			/* gospo: no need to sync with hardware right here as
-			 * we will flush this entry in fib_flush_table() in a
+			 * we will flush this entry in fib_table_flush() in a
 			 * sec */
 			ret++;
 		}
