@@ -202,38 +202,6 @@ static inline unsigned long get_index(t_key key, struct key_vector *kv)
 	return index >> kv->pos;
 }
 
-
-#ifdef CONFIG_IP_ROUTE_MULTIPATH
-
-#define for_nexthops(fi) {						\
-	int nhsel; const struct fib_nh *nh;				\
-	for (nhsel = 0, nh = (fi)->fib_nh;				\
-	     nhsel < (fi)->fib_nhs;					\
-	     nh++, nhsel++)
-
-#define change_nexthops(fi) {						\
-	int nhsel; struct fib_nh *nexthop_nh;				\
-	for (nhsel = 0,	nexthop_nh = (struct fib_nh *)((fi)->fib_nh);	\
-	     nhsel < (fi)->fib_nhs;					\
-	     nexthop_nh++, nhsel++)
-
-#else /* CONFIG_IP_ROUTE_MULTIPATH */
-
-/* Hope, that gcc will optimize it to get rid of dummy loop */
-
-#define for_nexthops(fi) {						\
-	int nhsel; const struct fib_nh *nh = (fi)->fib_nh;		\
-	for (nhsel = 0; nhsel < 1; nhsel++)
-
-#define change_nexthops(fi) {						\
-	int nhsel;							\
-	struct fib_nh *nexthop_nh = (struct fib_nh *)((fi)->fib_nh);	\
-	for (nhsel = 0; nhsel < 1; nhsel++)
-
-#endif /* CONFIG_IP_ROUTE_MULTIPATH */
-
-#define endfor_nexthops(fi) }
-
 /* To understand this stuff, an understanding of keys and all their bits is
  * necessary. Every node in the trie has a key associated with it, but not
  * all of the bits in that key are significant.
@@ -1131,7 +1099,7 @@ int fib_table_insert(struct fib_table *tb, struct fib_config *cfg)
 	if ((plen < KEYLENGTH) && (key << plen))
 		return -EINVAL;
 
-	fi = fib_create_info(tb, cfg);
+	fi = fib_create_info(cfg);
 	if (IS_ERR(fi)) {
 		err = PTR_ERR(fi);
 		goto err;
@@ -1203,8 +1171,6 @@ int fib_table_insert(struct fib_table *tb, struct fib_config *cfg)
 			new_fa->fa_slen = fa->fa_slen;
 			new_fa->tb_id = tb->tb_id;
 
-			/* gospo: need to add one of these calls when changing
-			 * route flags */
 			err = switchdev_fib_ipv4_add(key, plen, fi,
 						     new_fa->fa_tos,
 						     cfg->fc_type,
@@ -1884,39 +1850,55 @@ int fib_table_flush(struct fib_table *tb)
 			 * up.  Maybe fib_flush() should really be
 			 * called fib_update()? */
 
-			if (fi && (fi->fib_flags & RTNH_F_LINKDOWN)) {
-				printk(KERN_CRIT "%s: +%d deleting entry %pI4 in hardware due to link being down\n",__FILE__,__LINE__,&n->key);
-				switchdev_fib_ipv4_del(n->key, KEYLENGTH - fa->fa_slen,
-						       fi, fa->fa_tos, fa->fa_type,
-						       tb->tb_id);
-			} else if (fi && (fi->fib_flags & RTNH_F_DEAD)) {
+			if (fi && !(fi->fib_flags & RTNH_F_MODIFIED))
+				continue;
 
-				printk(KERN_CRIT "%s: +%d deleting entry %pI4 in hardware due to route being dead\n",__FILE__,__LINE__,&n->key);
+			if (fi && (fi->fib_flags & RTNH_F_DEAD)) {
+				struct nl_info fc_nlinfo = {
+					.nl_net = fi->fib_net,
+				};
+
 				switchdev_fib_ipv4_del(n->key, KEYLENGTH - fa->fa_slen,
 						       fi, fa->fa_tos, fa->fa_type,
 						       tb->tb_id);
 				hlist_del_rcu(&fa->fa_list);
 				fib_release_info(fa->fa_info);
+#if 1
+				rtmsg_fib(RTM_NEWROUTE, htonl(n->key), fa, 32, tb->tb_id, &fc_nlinfo, NLM_F_REPLACE); 
+#endif
+
 				alias_free_mem_rcu(fa);
 				found++;
 
 			} else {
-				/* If we are here we know the entire route nexthop is
-				 * not DEAD or LINKDOWN, but we need to check nexthops */
+				/* If we are here we know the entire route
+				 * is not DEAD, but we need to check
+				 * nexthops for changes to see if we need to
+				 * announce changes or sync with hardware */
 				change_nexthops(fi) {
-					if (nexthop_nh->nh_flags & RTNH_F_CHANGED) {
-						nexthop_nh->nh_flags &= ~(RTNH_F_CHANGED);
-						fi->fib_flags &= ~(RTNH_F_CHANGED);
+					/* If nexthop was modified, clear the
+					 * flag and indicate we need to update
+					 * the route */
+					if (nexthop_nh->nh_flags & RTNH_F_MODIFIED) {
+						nexthop_nh->nh_flags &= ~(RTNH_F_MODIFIED);
+						fi->fib_flags &= ~(RTNH_F_MODIFIED);
 						update_route = true;
-						break;
 					}
 				} endfor_nexthops(fi);
 
 				if (update_route) {
-					printk(KERN_CRIT "%s +%d adding entry %pI4 in hardware due to nexthop being dead/linkdown\n",__FILE__,__LINE__,&n->key);
+					struct nl_info fc_nlinfo = {
+						.nl_net = fi->fib_net,
+					};
+
 					switchdev_fib_ipv4_add(n->key, KEYLENGTH - fa->fa_slen,
 							       fi, fa->fa_tos, fa->fa_type,
 							       NLM_F_REPLACE, tb->tb_id);
+
+					/* need to send netlink message indicating route was modified, including kernel routes */
+#if 1
+					rtmsg_fib(RTM_NEWROUTE, htonl(n->key), fa, 32, tb->tb_id, &fc_nlinfo, NLM_F_REPLACE); 
+#endif
 					update_route = false;
 				}
 			}

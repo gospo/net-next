@@ -233,6 +233,8 @@ static inline int switchdev_fib_ipv4_add(u32 dst, int dst_len,
 					 u8 tos, u8 type,
 					 u32 nlflags, u32 tb_id)
 {
+	u32 ndst = htonl(dst);
+	printk(KERN_CRIT "%s(%pI4)\n",__FUNCTION__,&ndst);
 	return 0;
 }
 
@@ -240,6 +242,8 @@ static inline int switchdev_fib_ipv4_del(u32 dst, int dst_len,
 					 struct fib_info *fi,
 					 u8 tos, u8 type, u32 tb_id)
 {
+	u32 ndst = htonl(dst);
+	printk(KERN_CRIT "%s(%pI4)\n",__FUNCTION__,&ndst);
 	return 0;
 }
 
