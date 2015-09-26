@@ -52,43 +52,13 @@ static struct hlist_head *fib_info_laddrhash;
 static unsigned int fib_info_hash_size;
 static unsigned int fib_info_cnt;
 
+#ifdef CONFIG_IP_ROUTE_MULTIPATH
+static DEFINE_SPINLOCK(fib_multipath_lock);
+#endif
+
 #define DEVINDEX_HASHBITS 8
 #define DEVINDEX_HASHSIZE (1U << DEVINDEX_HASHBITS)
 static struct hlist_head fib_info_devhash[DEVINDEX_HASHSIZE];
-
-#ifdef CONFIG_IP_ROUTE_MULTIPATH
-
-static DEFINE_SPINLOCK(fib_multipath_lock);
-
-#define for_nexthops(fi) {						\
-	int nhsel; const struct fib_nh *nh;				\
-	for (nhsel = 0, nh = (fi)->fib_nh;				\
-	     nhsel < (fi)->fib_nhs;					\
-	     nh++, nhsel++)
-
-#define change_nexthops(fi) {						\
-	int nhsel; struct fib_nh *nexthop_nh;				\
-	for (nhsel = 0,	nexthop_nh = (struct fib_nh *)((fi)->fib_nh);	\
-	     nhsel < (fi)->fib_nhs;					\
-	     nexthop_nh++, nhsel++)
-
-#else /* CONFIG_IP_ROUTE_MULTIPATH */
-
-/* Hope, that gcc will optimize it to get rid of dummy loop */
-
-#define for_nexthops(fi) {						\
-	int nhsel; const struct fib_nh *nh = (fi)->fib_nh;		\
-	for (nhsel = 0; nhsel < 1; nhsel++)
-
-#define change_nexthops(fi) {						\
-	int nhsel;							\
-	struct fib_nh *nexthop_nh = (struct fib_nh *)((fi)->fib_nh);	\
-	for (nhsel = 0; nhsel < 1; nhsel++)
-
-#endif /* CONFIG_IP_ROUTE_MULTIPATH */
-
-#define endfor_nexthops(fi) }
-
 
 const struct fib_prop fib_props[RTN_MAX + 1] = {
 	[RTN_UNSPEC] = {
@@ -269,7 +239,7 @@ static inline int nh_comp(const struct fib_info *fi, const struct fib_info *ofi)
 		    nh->nh_tclassid != onh->nh_tclassid ||
 #endif
 		    lwtunnel_cmp_encap(nh->nh_lwtstate, onh->nh_lwtstate) ||
-		    ((nh->nh_flags ^ onh->nh_flags) & ~RTNH_COMPARE_MASK))
+		    ((nh->nh_flags ^ onh->nh_flags) & ~RTNH_F_COMPARE_MASK))
 			return -1;
 		onh++;
 	} endfor_nexthops(fi);
@@ -321,7 +291,7 @@ static struct fib_info *fib_find_info(const struct fib_info *nfi)
 		    nfi->fib_type == fi->fib_type &&
 		    memcmp(nfi->fib_metrics, fi->fib_metrics,
 			   sizeof(u32) * RTAX_MAX) == 0 &&
-		    !((nfi->fib_flags ^ fi->fib_flags) & ~RTNH_COMPARE_MASK) &&
+		    !((nfi->fib_flags ^ fi->fib_flags) & ~RTNH_F_COMPARE_MASK) &&
 		    (nfi->fib_nhs == 0 || nh_comp(fi, nfi) == 0))
 			return fi;
 	}
@@ -1274,7 +1244,10 @@ int fib_sync_down_addr(struct net *net, __be32 local)
 		if (!net_eq(fi->fib_net, net))
 			continue;
 		if (fi->fib_prefsrc == local) {
-			fi->fib_flags |= RTNH_F_DEAD;
+			fi->fib_flags |= (RTNH_F_DEAD | RTNH_F_MODIFIED);
+			/* gospo: no need to sync with hardware right here as
+			 * we will flush this entry in fib_table_flush() in a
+			 * sec */
 			ret++;
 		}
 	}
@@ -1311,12 +1284,14 @@ int fib_sync_down_dev(struct net_device *dev, unsigned long event)
 				switch (event) {
 				case NETDEV_DOWN:
 				case NETDEV_UNREGISTER:
-					nexthop_nh->nh_flags |= RTNH_F_DEAD;
+					nexthop_nh->nh_flags |= (RTNH_F_DEAD | RTNH_F_MODIFIED);
 					/* fall through */
 				case NETDEV_CHANGE:
-					nexthop_nh->nh_flags |= RTNH_F_LINKDOWN;
+					nexthop_nh->nh_flags |= (RTNH_F_LINKDOWN | RTNH_F_MODIFIED);
 					break;
 				}
+				/* gospo: no need to sync with hardware right
+				 * here since we will do it below */
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
 				spin_lock_bh(&fib_multipath_lock);
 				fi->fib_power -= nexthop_nh->nh_power;
@@ -1337,14 +1312,33 @@ int fib_sync_down_dev(struct net_device *dev, unsigned long event)
 			switch (event) {
 			case NETDEV_DOWN:
 			case NETDEV_UNREGISTER:
-				fi->fib_flags |= RTNH_F_DEAD;
+				fi->fib_flags |= (RTNH_F_DEAD | RTNH_F_MODIFIED);
 				/* fall through */
 			case NETDEV_CHANGE:
-				fi->fib_flags |= RTNH_F_LINKDOWN;
+				fi->fib_flags |= (RTNH_F_LINKDOWN | RTNH_F_MODIFIED);
 				break;
 			}
+			/* gospo: no need to sync with hardware right
+			 * here since we will do it below */
 			ret++;
 		}
+		/* need to sync with hardware here, probably based on a marker
+		 * that something changed, but maybe not */
+#if 0
+		switchdev_fib_ipv4_add(*n->key, KEYLENGTH - fa->fa_slen,
+				       fi, *fa->fa_tos,
+				       fi->fib_type,
+				       NLM_F_REPLACE,
+				       tb->tb_id);
+#else
+		/* notify other of the change to the route status, probably
+		 * best to just call fib_table_insert() or similar that will
+		 * ultimately indicate that flags have changed.  This
+		 * would mirror what is done when a route is changed
+		 * with 'ip route replace' -- i.e. NLM_F_REPLACE command */
+		/* maybe just fall fib_magic here with some hard-coded
+		 * values to see if it works */
+#endif
 	}
 
 	return ret;
@@ -1426,8 +1420,8 @@ out:
 }
 
 /*
- * Dead device goes up. We wake up dead nexthops.
- * It takes sense only on multipath routes.
+ * Dead device goes up. We wake up dead nexthops and/or
+ * clear linkdown flag on nexthops.
  */
 int fib_sync_up(struct net_device *dev, unsigned int nh_flags)
 {
@@ -1471,6 +1465,9 @@ int fib_sync_up(struct net_device *dev, unsigned int nh_flags)
 			spin_lock_bh(&fib_multipath_lock);
 			nexthop_nh->nh_power = 0;
 			nexthop_nh->nh_flags &= ~nh_flags;
+			nexthop_nh->nh_flags |= RTNH_F_MODIFIED;
+			/* gospo: need to sync with hardware here since we do
+			 * it below  */
 			spin_unlock_bh(&fib_multipath_lock);
 #else
 			nexthop_nh->nh_flags &= ~nh_flags;
@@ -1479,8 +1476,13 @@ int fib_sync_up(struct net_device *dev, unsigned int nh_flags)
 
 		if (alive > 0) {
 			fi->fib_flags &= ~nh_flags;
+			fi->fib_flags |= RTNH_F_MODIFIED;
+			/* gospo: need to sync with hardware here since we do
+			 * it below  */
 			ret++;
 		}
+		/* need to sync with hardware probably based on some marker to
+		 * indicate that flags have changed */
 	}
 
 	return ret;
@@ -1547,3 +1549,4 @@ void fib_select_multipath(struct fib_result *res)
 	spin_unlock_bh(&fib_multipath_lock);
 }
 #endif
+

@@ -1849,19 +1849,70 @@ int fib_table_flush(struct fib_table *tb)
 
 		hlist_for_each_entry_safe(fa, tmp, &n->leaf, fa_list) {
 			struct fib_info *fi = fa->fa_info;
+			bool update_route = false;
 
-			if (!fi || !(fi->fib_flags & RTNH_F_DEAD)) {
-				slen = fa->fa_slen;
+			/* Need check for RTNH_F_LINKDOWN and consider
+			 * whether or not to call switchdev_fib_ipv4_add
+			 * on routes with nexthops that have
+			 * RTNH_F_LINKDOWN or RTNH_F_DEAD.
+			 * Alternatively there could be a new function
+			 * that scans for things that may have just gone
+			 * up.  Maybe fib_flush() should really be
+			 * called fib_update()? */
+
+			if (fi && !(fi->fib_flags & RTNH_F_MODIFIED))
 				continue;
-			}
 
-			switchdev_fib_ipv4_del(n->key, KEYLENGTH - fa->fa_slen,
-					       fi, fa->fa_tos, fa->fa_type,
-					       tb->tb_id);
-			hlist_del_rcu(&fa->fa_list);
-			fib_release_info(fa->fa_info);
-			alias_free_mem_rcu(fa);
-			found++;
+			if (fi && (fi->fib_flags & RTNH_F_DEAD)) {
+				struct nl_info fc_nlinfo = {
+					.nl_net = fi->fib_net,
+				};
+
+				switchdev_fib_ipv4_del(n->key, KEYLENGTH - fa->fa_slen,
+						       fi, fa->fa_tos, fa->fa_type,
+						       tb->tb_id);
+				hlist_del_rcu(&fa->fa_list);
+				fib_release_info(fa->fa_info);
+#if 1
+				rtmsg_fib(RTM_NEWROUTE, htonl(n->key), fa, 32, tb->tb_id, &fc_nlinfo, NLM_F_REPLACE); 
+#endif
+
+				alias_free_mem_rcu(fa);
+				found++;
+
+			} else {
+				/* If we are here we know the entire route
+				 * is not DEAD, but we need to check
+				 * nexthops for changes to see if we need to
+				 * announce changes or sync with hardware */
+				change_nexthops(fi) {
+					/* If nexthop was modified, clear the
+					 * flag and indicate we need to update
+					 * the route */
+					if (nexthop_nh->nh_flags & RTNH_F_MODIFIED) {
+						nexthop_nh->nh_flags &= ~(RTNH_F_MODIFIED);
+						fi->fib_flags &= ~(RTNH_F_MODIFIED);
+						update_route = true;
+					}
+				} endfor_nexthops(fi);
+
+				if (update_route) {
+					struct nl_info fc_nlinfo = {
+						.nl_net = fi->fib_net,
+					};
+
+					switchdev_fib_ipv4_add(n->key, KEYLENGTH - fa->fa_slen,
+							       fi, fa->fa_tos, fa->fa_type,
+							       NLM_F_REPLACE, tb->tb_id);
+
+					/* need to send netlink message indicating route was modified, including kernel routes */
+#if 1
+					rtmsg_fib(RTM_NEWROUTE, htonl(n->key), fa, 32, tb->tb_id, &fc_nlinfo, NLM_F_REPLACE); 
+#endif
+					update_route = false;
+				}
+			}
+			slen = fa->fa_slen;
 		}
 
 		/* update leaf slen */

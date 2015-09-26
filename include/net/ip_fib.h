@@ -158,6 +158,37 @@ struct fib_result_nl {
 };
 
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
+
+#define for_nexthops(fi) {						\
+	int nhsel; const struct fib_nh *nh;				\
+	for (nhsel = 0, nh = (fi)->fib_nh;				\
+	     nhsel < (fi)->fib_nhs;					\
+	     nh++, nhsel++)
+
+#define change_nexthops(fi) {						\
+	int nhsel; struct fib_nh *nexthop_nh;				\
+	for (nhsel = 0,	nexthop_nh = (struct fib_nh *)((fi)->fib_nh);	\
+	     nhsel < (fi)->fib_nhs;					\
+	     nexthop_nh++, nhsel++)
+
+#else /* CONFIG_IP_ROUTE_MULTIPATH */
+
+/* Hope, that gcc will optimize it to get rid of dummy loop */
+
+#define for_nexthops(fi) {						\
+	int nhsel; const struct fib_nh *nh = (fi)->fib_nh;		\
+	for (nhsel = 0; nhsel < 1; nhsel++)
+
+#define change_nexthops(fi) {						\
+	int nhsel;							\
+	struct fib_nh *nexthop_nh = (struct fib_nh *)((fi)->fib_nh);	\
+	for (nhsel = 0; nhsel < 1; nhsel++)
+
+#endif /* CONFIG_IP_ROUTE_MULTIPATH */
+
+#define endfor_nexthops(fi) }
+
+#ifdef CONFIG_IP_ROUTE_MULTIPATH
 #define FIB_RES_NH(res)		((res).fi->fib_nh[(res).nh_sel])
 #else /* CONFIG_IP_ROUTE_MULTIPATH */
 #define FIB_RES_NH(res)		((res).fi->fib_nh[0])

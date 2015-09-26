@@ -336,13 +336,16 @@ struct rtnexthop {
 
 /* rtnh_flags */
 
-#define RTNH_F_DEAD		1	/* Nexthop is dead (used by multipath)	*/
-#define RTNH_F_PERVASIVE	2	/* Do recursive gateway lookup	*/
-#define RTNH_F_ONLINK		4	/* Gateway is forced on link	*/
-#define RTNH_F_OFFLOAD		8	/* offloaded route */
-#define RTNH_F_LINKDOWN		16	/* carrier-down on nexthop */
+#define RTNH_F_DEAD		(1 << 0)	/* Nexthop is dead (used by multipath)  */
+#define RTNH_F_PERVASIVE	(1 << 1)	/* Do recursive gateway lookup  */
+#define RTNH_F_ONLINK		(1 << 2)	/* Gateway is forced on link    */
+#define RTNH_F_OFFLOAD		(1 << 3)	/* offloaded route */
+#define RTNH_F_LINKDOWN		(1 << 4)	/* carrier-down on nexthop */
+#define RTNH_F_MODIFIED		(1 << 7)	/* used for internal kernel tracking */
 
-#define RTNH_COMPARE_MASK	(RTNH_F_DEAD | RTNH_F_LINKDOWN)
+#define RTNH_F_COMPARE_MASK	(RTNH_F_DEAD | \
+				 RTNH_F_LINKDOWN | \
+				 RTNH_F_MODIFIED) /* used as mask for route comparisons */
 
 /* Macros to handle hexthops */
 
